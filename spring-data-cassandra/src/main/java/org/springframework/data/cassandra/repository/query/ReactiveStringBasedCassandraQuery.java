@@ -19,11 +19,9 @@ import reactor.core.publisher.Mono;
 
 import org.springframework.data.cassandra.core.ReactiveCassandraOperations;
 import org.springframework.data.cassandra.repository.Query;
-import org.springframework.data.mapping.model.SpELExpressionEvaluator;
 import org.springframework.data.repository.query.QueryMethodEvaluationContextProvider;
-import org.springframework.data.repository.query.ReactiveQueryMethodEvaluationContextProvider;
-import org.springframework.data.spel.ExpressionDependencies;
-import org.springframework.expression.ExpressionParser;
+import org.springframework.data.repository.query.ReactiveQueryMethodValueEvaluationContextProvider;
+import org.springframework.data.repository.query.ValueExpressionSupportHolder;
 import org.springframework.expression.spel.standard.SpelExpressionParser;
 import org.springframework.util.Assert;
 
@@ -51,8 +49,7 @@ public class ReactiveStringBasedCassandraQuery extends AbstractReactiveCassandra
 
 	private final boolean isExistsQuery;
 
-	private final ExpressionParser expressionParser;
-	private final ReactiveQueryMethodEvaluationContextProvider evaluationContextProvider;
+	private final ReactiveQueryMethodValueEvaluationContextProvider evaluationContextProvider;
 
 	/**
 	 * Create a new {@link ReactiveStringBasedCassandraQuery} for the given {@link CassandraQueryMethod},
@@ -60,18 +57,13 @@ public class ReactiveStringBasedCassandraQuery extends AbstractReactiveCassandra
 	 * {@link QueryMethodEvaluationContextProvider}.
 	 *
 	 * @param queryMethod {@link ReactiveCassandraQueryMethod} on which this query is based.
-	 * @param operations {@link ReactiveCassandraOperations} used to perform data access in Cassandra.
-	 * @param expressionParser {@link SpelExpressionParser} used to parse expressions in the query.
-	 * @param evaluationContextProvider {@link QueryMethodEvaluationContextProvider} used to access the potentially shared
-	 *          {@link org.springframework.expression.spel.support.StandardEvaluationContext}.
-	 * @see org.springframework.data.cassandra.repository.query.ReactiveCassandraQueryMethod
-	 * @see org.springframework.data.cassandra.core.ReactiveCassandraOperations
+	 * @param operations {@link ReactiveCassandraOperations} used to perform data access in Cassandra. * @param
+	 *          expressionSupport {@link ValueExpressionSupportHolder} infrastructure holder to support value expressions
+	 *          in * the query.
 	 */
 	public ReactiveStringBasedCassandraQuery(ReactiveCassandraQueryMethod queryMethod,
-			ReactiveCassandraOperations operations, ExpressionParser expressionParser,
-			ReactiveQueryMethodEvaluationContextProvider evaluationContextProvider) {
-
-		this(queryMethod.getRequiredAnnotatedQuery(), queryMethod, operations, expressionParser, evaluationContextProvider);
+			ReactiveCassandraOperations operations, ValueExpressionSupportHolder expressionSupport) {
+		this(queryMethod.getRequiredAnnotatedQuery(), queryMethod, operations, expressionSupport);
 	}
 
 	/**
@@ -81,24 +73,20 @@ public class ReactiveStringBasedCassandraQuery extends AbstractReactiveCassandra
 	 *
 	 * @param method {@link ReactiveCassandraQueryMethod} on which this query is based.
 	 * @param operations {@link ReactiveCassandraOperations} used to perform data access in Cassandra.
-	 * @param expressionParser {@link SpelExpressionParser} used to parse expressions in the query.
-	 * @param evaluationContextProvider {@link QueryMethodEvaluationContextProvider} used to access the potentially shared
-	 *          {@link org.springframework.expression.spel.support.StandardEvaluationContext}.
-	 * @see org.springframework.data.cassandra.repository.query.ReactiveCassandraQueryMethod
-	 * @see org.springframework.data.cassandra.core.ReactiveCassandraOperations
+	 * @param expressionSupport {@link ValueExpressionSupportHolder} infrastructure holder to support value expressions in
+	 *          the query.
 	 */
 	public ReactiveStringBasedCassandraQuery(String query, ReactiveCassandraQueryMethod method,
-			ReactiveCassandraOperations operations, ExpressionParser expressionParser,
-			ReactiveQueryMethodEvaluationContextProvider evaluationContextProvider) {
+			ReactiveCassandraOperations operations, ValueExpressionSupportHolder expressionSupport) {
 
 		super(method, operations);
 
 		Assert.hasText(query, "Query must not be empty");
 
-		this.expressionParser = expressionParser;
-		this.evaluationContextProvider = evaluationContextProvider;
-
-		this.stringBasedQuery = new StringBasedQuery(query, method.getParameters(), expressionParser);
+		this.evaluationContextProvider = (ReactiveQueryMethodValueEvaluationContextProvider) expressionSupport
+				.createValueContextProvider(method.getParameters());
+		this.stringBasedQuery = new StringBasedQuery(query, method.getParameters(),
+				expressionSupport.getValueExpressionParser());
 
 		if (method.hasAnnotatedQuery()) {
 
@@ -126,10 +114,10 @@ public class ReactiveStringBasedCassandraQuery extends AbstractReactiveCassandra
 		StringBasedQuery query = getStringBasedQuery();
 		ConvertingParameterAccessor parameterAccessorToUse = new ConvertingParameterAccessor(
 				getReactiveCassandraOperations().getConverter(), parameterAccessor);
-		Mono<SpELExpressionEvaluator> spelEvaluator = getSpelEvaluatorFor(query.getExpressionDependencies(),
-				parameterAccessorToUse);
 
-		return spelEvaluator.map(it -> getQueryStatementCreator().select(query, parameterAccessorToUse, it));
+		return evaluationContextProvider
+				.getEvaluationContextLater(parameterAccessor.getValues(), query.getExpressionDependencies())
+				.map(it -> getQueryStatementCreator().select(query, parameterAccessorToUse, it));
 	}
 
 	@Override
@@ -152,21 +140,4 @@ public class ReactiveStringBasedCassandraQuery extends AbstractReactiveCassandra
 		return false;
 	}
 
-	/**
-	 * Obtain a {@link Mono publisher} emitting the {@link SpELExpressionEvaluator} suitable to evaluate expressions
-	 * backed by the given dependencies.
-	 *
-	 * @param dependencies must not be {@literal null}.
-	 * @param accessor must not be {@literal null}.
-	 * @return a {@link Mono} emitting the {@link SpELExpressionEvaluator} when ready.
-	 */
-	private Mono<SpELExpressionEvaluator> getSpelEvaluatorFor(ExpressionDependencies dependencies,
-			CassandraParameterAccessor accessor) {
-
-		return evaluationContextProvider
-				.getEvaluationContextLater(getQueryMethod().getParameters(), accessor.getValues(), dependencies)
-				.map(evaluationContext -> (SpELExpressionEvaluator) new DefaultSpELExpressionEvaluator(expressionParser,
-						evaluationContext))
-				.defaultIfEmpty(DefaultSpELExpressionEvaluator.unsupported());
-	}
 }

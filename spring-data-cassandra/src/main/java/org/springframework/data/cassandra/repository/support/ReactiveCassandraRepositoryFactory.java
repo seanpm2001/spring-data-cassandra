@@ -34,11 +34,9 @@ import org.springframework.data.repository.core.RepositoryMetadata;
 import org.springframework.data.repository.core.support.ReactiveRepositoryFactorySupport;
 import org.springframework.data.repository.query.QueryLookupStrategy;
 import org.springframework.data.repository.query.QueryLookupStrategy.Key;
-import org.springframework.data.repository.query.QueryMethodEvaluationContextProvider;
 import org.springframework.data.repository.query.ReactiveQueryMethodEvaluationContextProvider;
 import org.springframework.data.repository.query.RepositoryQuery;
-import org.springframework.expression.ExpressionParser;
-import org.springframework.expression.spel.standard.SpelExpressionParser;
+import org.springframework.data.repository.query.ValueExpressionSupportHolder;
 import org.springframework.lang.Nullable;
 import org.springframework.util.Assert;
 
@@ -49,8 +47,6 @@ import org.springframework.util.Assert;
  * @since 2.0
  */
 public class ReactiveCassandraRepositoryFactory extends ReactiveRepositoryFactorySupport {
-
-	private static final SpelExpressionParser EXPRESSION_PARSER = new SpelExpressionParser();
 
 	private final ReactiveCassandraOperations operations;
 
@@ -91,9 +87,8 @@ public class ReactiveCassandraRepositoryFactory extends ReactiveRepositoryFactor
 
 	@Override
 	protected Optional<QueryLookupStrategy> getQueryLookupStrategy(@Nullable Key key,
-			QueryMethodEvaluationContextProvider evaluationContextProvider) {
-		return Optional.of(new CassandraQueryLookupStrategy(operations,
-				(ReactiveQueryMethodEvaluationContextProvider) evaluationContextProvider, mappingContext));
+			ValueExpressionSupportHolder expressionSupport) {
+		return Optional.of(new CassandraQueryLookupStrategy(operations, expressionSupport, mappingContext));
 	}
 
 	@SuppressWarnings("unchecked")
@@ -110,45 +105,30 @@ public class ReactiveCassandraRepositoryFactory extends ReactiveRepositoryFactor
 	 *
 	 * @author Mark Paluch
 	 */
-	private static class CassandraQueryLookupStrategy implements QueryLookupStrategy {
-
-		private final ReactiveQueryMethodEvaluationContextProvider evaluationContextProvider;
-
-		private final ReactiveCassandraOperations operations;
-
-		private final MappingContext<? extends CassandraPersistentEntity<?>, ? extends CassandraPersistentProperty> mappingContext;
-
-		private final ExpressionParser expressionParser = new CachingExpressionParser(EXPRESSION_PARSER);
-
-		CassandraQueryLookupStrategy(ReactiveCassandraOperations operations,
-				ReactiveQueryMethodEvaluationContextProvider evaluationContextProvider,
-				MappingContext<? extends CassandraPersistentEntity<?>, ? extends CassandraPersistentProperty> mappingContext) {
-
-			this.evaluationContextProvider = evaluationContextProvider;
-			this.operations = operations;
-			this.mappingContext = mappingContext;
-		}
+	private record CassandraQueryLookupStrategy(ReactiveCassandraOperations operations,
+			ValueExpressionSupportHolder expressionSupport,
+			MappingContext<? extends CassandraPersistentEntity<?>, ? extends CassandraPersistentProperty> mappingContext)
+			implements
+				QueryLookupStrategy {
 
 		@Override
 		public RepositoryQuery resolveQuery(Method method, RepositoryMetadata metadata, ProjectionFactory factory,
 				NamedQueries namedQueries) {
 
-			ReactiveCassandraQueryMethod queryMethod = new ReactiveCassandraQueryMethod(method, metadata, factory,
-					mappingContext);
+				ReactiveCassandraQueryMethod queryMethod = new ReactiveCassandraQueryMethod(method, metadata, factory,
+						mappingContext);
 
-			String namedQueryName = queryMethod.getNamedQueryName();
+				String namedQueryName = queryMethod.getNamedQueryName();
 
-			if (namedQueries.hasQuery(namedQueryName)) {
-				String namedQuery = namedQueries.getQuery(namedQueryName);
+				if (namedQueries.hasQuery(namedQueryName)) {
+					String namedQuery = namedQueries.getQuery(namedQueryName);
 
-				return new ReactiveStringBasedCassandraQuery(namedQuery, queryMethod, operations, expressionParser,
-						evaluationContextProvider);
-			} else if (queryMethod.hasAnnotatedQuery()) {
-				return new ReactiveStringBasedCassandraQuery(queryMethod, operations, expressionParser,
-						evaluationContextProvider);
-			} else {
-				return new ReactivePartTreeCassandraQuery(queryMethod, operations);
+					return new ReactiveStringBasedCassandraQuery(namedQuery, queryMethod, operations, expressionSupport);
+				} else if (queryMethod.hasAnnotatedQuery()) {
+					return new ReactiveStringBasedCassandraQuery(queryMethod, operations, expressionSupport);
+				} else {
+					return new ReactivePartTreeCassandraQuery(queryMethod, operations);
+				}
 			}
 		}
-	}
 }

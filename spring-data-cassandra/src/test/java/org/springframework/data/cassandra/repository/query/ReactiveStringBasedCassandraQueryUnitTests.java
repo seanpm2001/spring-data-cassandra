@@ -28,6 +28,8 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+
+import org.springframework.core.env.StandardEnvironment;
 import org.springframework.data.cassandra.ReactiveSession;
 import org.springframework.data.cassandra.core.ReactiveCassandraOperations;
 import org.springframework.data.cassandra.core.convert.MappingCassandraConverter;
@@ -37,12 +39,15 @@ import org.springframework.data.cassandra.core.mapping.CassandraMappingContext;
 import org.springframework.data.cassandra.domain.Person;
 import org.springframework.data.cassandra.repository.Consistency;
 import org.springframework.data.cassandra.repository.Query;
+import org.springframework.data.expression.ValueExpressionParser;
 import org.springframework.data.projection.ProjectionFactory;
 import org.springframework.data.projection.SpelAwareProxyProjectionFactory;
 import org.springframework.data.repository.Repository;
 import org.springframework.data.repository.core.RepositoryMetadata;
 import org.springframework.data.repository.core.support.AbstractRepositoryMetadata;
+import org.springframework.data.repository.query.QueryMethodValueEvaluationContextProviderFactory;
 import org.springframework.data.repository.query.ReactiveExtensionAwareQueryMethodEvaluationContextProvider;
+import org.springframework.data.repository.query.ValueExpressionSupportHolder;
 import org.springframework.data.spel.spi.EvaluationContextExtension;
 import org.springframework.data.spel.spi.ReactiveEvaluationContextExtension;
 import org.springframework.expression.spel.standard.SpelExpressionParser;
@@ -153,8 +158,11 @@ class ReactiveStringBasedCassandraQueryUnitTests {
 		ReactiveExtensionAwareQueryMethodEvaluationContextProvider provider = new ReactiveExtensionAwareQueryMethodEvaluationContextProvider(
 				Arrays.asList(MyReactiveExtension.INSTANCE, MyDefunctExtension.INSTANCE));
 
-		return new ReactiveStringBasedCassandraQuery(queryMethod, operations, PARSER,
-				provider);
+		QueryMethodValueEvaluationContextProviderFactory factory = new QueryMethodValueEvaluationContextProviderFactory(
+				new StandardEnvironment(), provider);
+		ValueExpressionSupportHolder expressionSupport = new ValueExpressionSupportHolder(factory,
+				ValueExpressionParser.create(() -> PARSER));
+		return new ReactiveStringBasedCassandraQuery(queryMethod, operations, expressionSupport);
 	}
 
 	@SuppressWarnings("unused")

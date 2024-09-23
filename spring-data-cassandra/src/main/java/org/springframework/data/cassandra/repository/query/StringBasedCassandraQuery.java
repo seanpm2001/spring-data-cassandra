@@ -17,9 +17,10 @@ package org.springframework.data.cassandra.repository.query;
 
 import org.springframework.data.cassandra.core.CassandraOperations;
 import org.springframework.data.cassandra.repository.Query;
+import org.springframework.data.expression.ValueEvaluationContext;
 import org.springframework.data.repository.query.QueryMethodEvaluationContextProvider;
-import org.springframework.expression.EvaluationContext;
-import org.springframework.expression.ExpressionParser;
+import org.springframework.data.repository.query.QueryMethodValueEvaluationContextProvider;
+import org.springframework.data.repository.query.ValueExpressionSupportHolder;
 import org.springframework.expression.spel.standard.SpelExpressionParser;
 
 import com.datastax.oss.driver.api.core.cql.SimpleStatement;
@@ -46,8 +47,7 @@ public class StringBasedCassandraQuery extends AbstractCassandraQuery {
 
 	private final boolean isExistsQuery;
 
-	private final ExpressionParser expressionParser;
-	private final QueryMethodEvaluationContextProvider evaluationContextProvider;
+	private final QueryMethodValueEvaluationContextProvider evaluationContextProvider;
 
 	/**
 	 * Create a new {@link StringBasedCassandraQuery} for the given {@link CassandraQueryMethod},
@@ -55,16 +55,13 @@ public class StringBasedCassandraQuery extends AbstractCassandraQuery {
 	 *
 	 * @param queryMethod {@link CassandraQueryMethod} on which this query is based.
 	 * @param operations {@link CassandraOperations} used to perform data access in Cassandra.
-	 * @param expressionParser {@link SpelExpressionParser} used to parse expressions in the query.
-	 * @param evaluationContextProvider {@link QueryMethodEvaluationContextProvider} used to access the potentially shared
-	 *          {@link org.springframework.expression.spel.support.StandardEvaluationContext}.
-	 * @see org.springframework.data.cassandra.repository.query.CassandraQueryMethod
-	 * @see org.springframework.data.cassandra.core.CassandraOperations
+	 * @param expressionSupport {@link ValueExpressionSupportHolder} infrastructure holder to support value expressions in
+	 *          the query.
 	 */
 	public StringBasedCassandraQuery(CassandraQueryMethod queryMethod, CassandraOperations operations,
-			ExpressionParser expressionParser, QueryMethodEvaluationContextProvider evaluationContextProvider) {
+			ValueExpressionSupportHolder expressionSupport) {
 
-		this(queryMethod.getRequiredAnnotatedQuery(), queryMethod, operations, expressionParser, evaluationContextProvider);
+		this(queryMethod.getRequiredAnnotatedQuery(), queryMethod, operations, expressionSupport);
 	}
 
 	/**
@@ -74,21 +71,17 @@ public class StringBasedCassandraQuery extends AbstractCassandraQuery {
 	 * @param query {@link String} containing the Apache Cassandra CQL query to execute.
 	 * @param method {@link CassandraQueryMethod} on which this query is based.
 	 * @param operations {@link CassandraOperations} used to perform data access in Cassandra.
-	 * @param expressionParser {@link SpelExpressionParser} used to parse expressions in the query.
-	 * @param evaluationContextProvider {@link QueryMethodEvaluationContextProvider} used to access the potentially shared
-	 *          {@link org.springframework.expression.spel.support.StandardEvaluationContext}.
-	 * @see org.springframework.data.cassandra.repository.query.CassandraQueryMethod
-	 * @see org.springframework.data.cassandra.core.CassandraOperations
+	 * @param expressionSupport {@link ValueExpressionSupportHolder} infrastructure holder to support value expressions in
+	 *          the query.
 	 */
 	public StringBasedCassandraQuery(String query, CassandraQueryMethod method, CassandraOperations operations,
-			ExpressionParser expressionParser, QueryMethodEvaluationContextProvider evaluationContextProvider) {
+			ValueExpressionSupportHolder expressionSupport) {
 
 		super(method, operations);
 
-		this.expressionParser = expressionParser;
-		this.evaluationContextProvider = evaluationContextProvider;
-
-		this.stringBasedQuery = new StringBasedQuery(query, method.getParameters(), expressionParser);
+		this.stringBasedQuery = new StringBasedQuery(query, method.getParameters(),
+				expressionSupport.getValueExpressionParser());
+		this.evaluationContextProvider = expressionSupport.createValueContextProvider(method.getParameters());
 
 		if (method.hasAnnotatedQuery()) {
 
@@ -116,11 +109,10 @@ public class StringBasedCassandraQuery extends AbstractCassandraQuery {
 		StringBasedQuery query = getStringBasedQuery();
 		ConvertingParameterAccessor parameterAccessorToUse = new ConvertingParameterAccessor(getOperations().getConverter(),
 				parameterAccessor);
-		EvaluationContext evaluationContext = evaluationContextProvider.getEvaluationContext(
-				getQueryMethod().getParameters(), parameterAccessorToUse.getValues(), query.getExpressionDependencies());
+		ValueEvaluationContext evaluationContext = evaluationContextProvider
+				.getEvaluationContext(parameterAccessorToUse.getValues(), query.getExpressionDependencies());
 
-		return getQueryStatementCreator().select(query, parameterAccessorToUse,
-				new DefaultSpELExpressionEvaluator(expressionParser, evaluationContext));
+		return getQueryStatementCreator().select(query, parameterAccessorToUse, evaluationContext);
 	}
 
 	@Override

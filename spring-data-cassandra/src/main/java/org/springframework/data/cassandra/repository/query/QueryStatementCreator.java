@@ -20,6 +20,7 @@ import java.util.function.Function;
 
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
+
 import org.springframework.data.cassandra.core.StatementFactory;
 import org.springframework.data.cassandra.core.cql.QueryExtractorDelegate;
 import org.springframework.data.cassandra.core.cql.QueryOptions;
@@ -31,8 +32,8 @@ import org.springframework.data.cassandra.core.query.Columns;
 import org.springframework.data.cassandra.core.query.Query;
 import org.springframework.data.cassandra.repository.Query.Idempotency;
 import org.springframework.data.domain.Limit;
+import org.springframework.data.expression.ValueEvaluationContext;
 import org.springframework.data.mapping.context.MappingContext;
-import org.springframework.data.mapping.model.SpELExpressionEvaluator;
 import org.springframework.data.repository.query.QueryCreationException;
 import org.springframework.data.repository.query.ResultProcessor;
 import org.springframework.data.repository.query.ReturnedType;
@@ -249,11 +250,11 @@ class QueryStatementCreator {
 	 * @return the {@link Statement}.
 	 */
 	SimpleStatement select(StringBasedQuery stringBasedQuery, CassandraParameterAccessor parameterAccessor,
-			SpELExpressionEvaluator evaluator) {
+			ValueEvaluationContext evaluationContext) {
 
 		try {
 
-			SimpleStatement boundQuery = stringBasedQuery.bindQuery(parameterAccessor, evaluator);
+			SimpleStatement boundQuery = stringBasedQuery.bindQuery(parameterAccessor, evaluationContext);
 
 			Optional<QueryOptions> queryOptions = Optional.ofNullable(parameterAccessor.getQueryOptions());
 

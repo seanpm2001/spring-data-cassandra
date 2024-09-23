@@ -16,6 +16,7 @@
 package org.springframework.data.cassandra.repository.query;
 
 import static org.assertj.core.api.Assertions.*;
+import static org.mockito.Mockito.*;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -23,6 +24,8 @@ import java.util.List;
 import org.junit.jupiter.api.Test;
 import org.springframework.data.cassandra.repository.query.BindingContext.ParameterBinding;
 import org.springframework.data.cassandra.repository.query.StringBasedQuery.ParameterBindingParser;
+import org.springframework.data.expression.ValueExpressionParser;
+import org.springframework.expression.spel.standard.SpelExpressionParser;
 
 /**
  * Unit tests for {@link ParameterBindingParser}.
@@ -38,7 +41,7 @@ class ParameterBindingParserUnitTests {
 		List<ParameterBinding> bindings = new ArrayList<>();
 
 		String transformed = ParameterBindingParser.INSTANCE.parseAndCollectParameterBindingsFromQueryIntoBindings(query,
-				bindings);
+				bindings, mock(ValueExpressionParser.class));
 
 		assertThat(transformed).isEqualTo(query);
 		assertThat(bindings).isEmpty();
@@ -51,7 +54,7 @@ class ParameterBindingParserUnitTests {
 		List<ParameterBinding> bindings = new ArrayList<>();
 
 		String transformed = ParameterBindingParser.INSTANCE.parseAndCollectParameterBindingsFromQueryIntoBindings(query,
-				bindings);
+				bindings, mock(ValueExpressionParser.class));
 
 		assertThat(transformed).isEqualTo(query);
 		assertThat(bindings).isEmpty();
@@ -64,7 +67,7 @@ class ParameterBindingParserUnitTests {
 		List<ParameterBinding> bindings = new ArrayList<>();
 
 		String transformed = ParameterBindingParser.INSTANCE.parseAndCollectParameterBindingsFromQueryIntoBindings(query,
-				bindings);
+				bindings, mock(ValueExpressionParser.class));
 
 		assertThat(transformed).isEqualTo("SELECT * FROM hello_world WHERE a = ?_param_? and b = ?_param_?");
 		assertThat(bindings).hasSize(2);
@@ -80,7 +83,7 @@ class ParameterBindingParserUnitTests {
 		List<ParameterBinding> bindings = new ArrayList<>();
 
 		String transformed = ParameterBindingParser.INSTANCE.parseAndCollectParameterBindingsFromQueryIntoBindings(query,
-				bindings);
+				bindings, mock(ValueExpressionParser.class));
 
 		assertThat(transformed).isEqualTo("SELECT * FROM hello_world WHERE a = ?_param_? and b = ?_param_?");
 		assertThat(bindings).hasSize(2);
@@ -93,7 +96,7 @@ class ParameterBindingParserUnitTests {
 		List<ParameterBinding> bindings = new ArrayList<>();
 
 		String transformed = ParameterBindingParser.INSTANCE.parseAndCollectParameterBindingsFromQueryIntoBindings(query,
-				bindings);
+				bindings, ValueExpressionParser.create(SpelExpressionParser::new));
 
 		assertThat(transformed).isEqualTo("SELECT * FROM hello_world WHERE a = ?_param_? and b = ?_param_?");
 		assertThat(bindings).hasSize(2);
@@ -106,7 +109,7 @@ class ParameterBindingParserUnitTests {
 		List<ParameterBinding> bindings = new ArrayList<>();
 
 		String transformed = ParameterBindingParser.INSTANCE.parseAndCollectParameterBindingsFromQueryIntoBindings(query,
-				bindings);
+				bindings, ValueExpressionParser.create(SpelExpressionParser::new));
 
 		assertThat(transformed).isEqualTo("SELECT * FROM hello_world WHERE a = ?_param_? and b = ?_param_?");
 		assertThat(bindings).hasSize(2);
@@ -119,7 +122,7 @@ class ParameterBindingParserUnitTests {
 		List<ParameterBinding> bindings = new ArrayList<>();
 
 		String transformed = ParameterBindingParser.INSTANCE.parseAndCollectParameterBindingsFromQueryIntoBindings(query,
-				bindings);
+				bindings, ValueExpressionParser.create(SpelExpressionParser::new));
 
 		assertThat(transformed).isEqualTo(
 				"SELECT * FROM hello_world WHERE (a = ?_param_? and b = ?_param_?) and c = (?_param_?) and (d = ?_param_?)");

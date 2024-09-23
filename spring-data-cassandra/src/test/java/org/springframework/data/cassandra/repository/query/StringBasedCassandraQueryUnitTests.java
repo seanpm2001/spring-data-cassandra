@@ -33,6 +33,8 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+
+import org.springframework.core.env.StandardEnvironment;
 import org.springframework.data.cassandra.core.CassandraOperations;
 import org.springframework.data.cassandra.core.convert.MappingCassandraConverter;
 import org.springframework.data.cassandra.core.cql.QueryOptions;
@@ -43,6 +45,7 @@ import org.springframework.data.cassandra.domain.Person;
 import org.springframework.data.cassandra.repository.Consistency;
 import org.springframework.data.cassandra.repository.Query;
 import org.springframework.data.cassandra.support.UserDefinedTypeBuilder;
+import org.springframework.data.expression.ValueExpressionParser;
 import org.springframework.data.projection.ProjectionFactory;
 import org.springframework.data.projection.SpelAwareProxyProjectionFactory;
 import org.springframework.data.repository.Repository;
@@ -51,6 +54,8 @@ import org.springframework.data.repository.core.support.AbstractRepositoryMetada
 import org.springframework.data.repository.query.ExtensionAwareQueryMethodEvaluationContextProvider;
 import org.springframework.data.repository.query.Param;
 import org.springframework.data.repository.query.QueryCreationException;
+import org.springframework.data.repository.query.QueryMethodValueEvaluationContextProviderFactory;
+import org.springframework.data.repository.query.ValueExpressionSupportHolder;
 import org.springframework.expression.spel.standard.SpelExpressionParser;
 import org.springframework.util.ReflectionUtils;
 
@@ -431,8 +436,12 @@ class StringBasedCassandraQueryUnitTests {
 		CassandraQueryMethod queryMethod = new CassandraQueryMethod(method, metadata, factory,
 				converter.getMappingContext());
 
-		return new StringBasedCassandraQuery(queryMethod, operations, PARSER,
-				ExtensionAwareQueryMethodEvaluationContextProvider.DEFAULT);
+		QueryMethodValueEvaluationContextProviderFactory factory = new QueryMethodValueEvaluationContextProviderFactory(
+				new StandardEnvironment(), ExtensionAwareQueryMethodEvaluationContextProvider.DEFAULT);
+		ValueExpressionSupportHolder expressionSupport = new ValueExpressionSupportHolder(factory,
+				ValueExpressionParser.create(() -> PARSER));
+
+		return new StringBasedCassandraQuery(queryMethod, operations, expressionSupport);
 	}
 
 	@SuppressWarnings("unused")

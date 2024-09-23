@@ -19,7 +19,8 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 
-import org.springframework.data.mapping.model.SpELExpressionEvaluator;
+import org.springframework.data.expression.ValueEvaluationContext;
+import org.springframework.data.expression.ValueExpression;
 import org.springframework.data.repository.query.Parameter;
 import org.springframework.data.repository.query.ParameterAccessor;
 import org.springframework.lang.Nullable;
@@ -39,18 +40,18 @@ class BindingContext {
 
 	private final List<ParameterBinding> bindings;
 
-	private final SpELExpressionEvaluator evaluator;
+	private final ValueEvaluationContext evaluationContext;
 
 	/**
 	 * Create new {@link BindingContext}.
 	 */
 	public BindingContext(CassandraParameters parameters, ParameterAccessor parameterAccessor,
-			List<ParameterBinding> bindings, SpELExpressionEvaluator evaluator) {
+			List<ParameterBinding> bindings, ValueEvaluationContext evaluationContext) {
 
 		this.parameters = parameters;
 		this.parameterAccessor = parameterAccessor;
 		this.bindings = bindings;
-		this.evaluator = evaluator;
+		this.evaluationContext = evaluationContext;
 	}
 
 	/**
@@ -92,7 +93,7 @@ class BindingContext {
 	private Object getParameterValueForBinding(ParameterBinding binding) {
 
 		if (binding.isExpression()) {
-			return evaluator.evaluate(binding.getRequiredExpression());
+			return binding.getRequiredExpression().evaluate(evaluationContext);
 		}
 
 		return binding.isNamed()
@@ -120,17 +121,17 @@ class BindingContext {
 	static class ParameterBinding {
 
 		private final int parameterIndex;
-		private final @Nullable String expression;
+		private final @Nullable ValueExpression expression;
 		private final @Nullable String parameterName;
 
-		private ParameterBinding(int parameterIndex, @Nullable String expression, @Nullable String parameterName) {
+		private ParameterBinding(int parameterIndex, @Nullable ValueExpression expression, @Nullable String parameterName) {
 
 			this.parameterIndex = parameterIndex;
 			this.expression = expression;
 			this.parameterName = parameterName;
 		}
 
-		static ParameterBinding expression(String expression, boolean quoted) {
+		static ParameterBinding expression(ValueExpression expression) {
 			return new ParameterBinding(-1, expression, null);
 		}
 
@@ -154,7 +155,7 @@ class BindingContext {
 			return ("?" + (isExpression() ? "expr" : "") + parameterIndex);
 		}
 
-		String getRequiredExpression() {
+		ValueExpression getRequiredExpression() {
 
 			Assert.state(expression != null, "ParameterBinding is not an expression");
 			return expression;

@@ -22,9 +22,9 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 import org.springframework.data.cassandra.repository.query.BindingContext.ParameterBinding;
-import org.springframework.data.mapping.model.SpELExpressionEvaluator;
+import org.springframework.data.expression.ValueEvaluationContext;
+import org.springframework.data.expression.ValueExpressionParser;
 import org.springframework.data.spel.ExpressionDependencies;
-import org.springframework.expression.ExpressionParser;
 import org.springframework.lang.Nullable;
 import org.springframework.util.Assert;
 import org.springframework.util.StringUtils;
@@ -43,26 +43,23 @@ class StringBasedQuery {
 
 	private final CassandraParameters parameters;
 
-	private final ExpressionParser expressionParser;
-
 	private final List<ParameterBinding> queryParameterBindings = new ArrayList<>();
 
 	private final ExpressionDependencies expressionDependencies;
 
 	/**
 	 * Create a new {@link StringBasedQuery} given {@code query}, {@link CassandraParameters} and
-	 * {@link ExpressionParser}.
+	 * {@link ValueExpressionParser}.
 	 *
 	 * @param query must not be empty.
 	 * @param parameters must not be {@literal null}.
 	 * @param expressionParser must not be {@literal null}.
 	 */
-	StringBasedQuery(String query, CassandraParameters parameters, ExpressionParser expressionParser) {
+	StringBasedQuery(String query, CassandraParameters parameters, ValueExpressionParser expressionParser) {
 
 		this.query = ParameterBindingParser.INSTANCE.parseAndCollectParameterBindingsFromQueryIntoBindings(query,
-				this.queryParameterBindings);
+				this.queryParameterBindings, expressionParser);
 		this.parameters = parameters;
-		this.expressionParser = expressionParser;
 		this.expressionDependencies = createExpressionDependencies();
 	}
 
@@ -76,8 +73,7 @@ class StringBasedQuery {
 
 		for (ParameterBinding binding : queryParameterBindings) {
 			if (binding.isExpression()) {
-				dependencies
-						.add(ExpressionDependencies.discover(expressionParser.parseExpression(binding.getRequiredExpression())));
+				dependencies.add(binding.getRequiredExpression().getExpressionDependencies());
 			}
 		}
 
@@ -97,16 +93,17 @@ class StringBasedQuery {
 	 * Bind the query to actual parameters using {@link CassandraParameterAccessor},
 	 *
 	 * @param parameterAccessor must not be {@literal null}.
-	 * @param evaluator must not be {@literal null}.
+	 * @param evaluationContext must not be {@literal null}.
 	 * @return the bound String query containing formatted parameters.
 	 */
-	public SimpleStatement bindQuery(CassandraParameterAccessor parameterAccessor, SpELExpressionEvaluator evaluator) {
+	public SimpleStatement bindQuery(CassandraParameterAccessor parameterAccessor,
+			ValueEvaluationContext evaluationContext) {
 
 		Assert.notNull(parameterAccessor, "CassandraParameterAccessor must not be null");
-		Assert.notNull(evaluator, "SpELExpressionEvaluator must not be null");
+		Assert.notNull(evaluationContext, "ValueEvaluationContext must not be null");
 
 		BindingContext bindingContext = new BindingContext(this.parameters, parameterAccessor, this.queryParameterBindings,
-				evaluator);
+				evaluationContext);
 
 		List<Object> arguments = bindingContext.getBindingValues();
 
@@ -176,6 +173,8 @@ class StringBasedQuery {
 		private static final Pattern NAMED_PARAMETER_BINDING_PATTERN = Pattern.compile("\\:(\\w+)");
 		private static final Pattern INDEX_BASED_EXPRESSION_PATTERN = Pattern.compile("\\?\\#\\{");
 		private static final Pattern NAME_BASED_EXPRESSION_PATTERN = Pattern.compile("\\:\\#\\{");
+		private static final Pattern INDEX_BASED_PLACEHOLDER_PATTERN = Pattern.compile("\\?\\$\\{");
+		private static final Pattern NAME_BASED_PLACEHOLDER_PATTERN = Pattern.compile("\\:\\$\\{");
 
 		private static final String ARGUMENT_PLACEHOLDER = "?_param_?";
 
@@ -186,7 +185,8 @@ class StringBasedQuery {
 		 * @param bindings must not be {@literal null}.
 		 * @return a list of {@link ParameterBinding}s found in the given {@code input}.
 		 */
-		public String parseAndCollectParameterBindingsFromQueryIntoBindings(String input, List<ParameterBinding> bindings) {
+		public String parseAndCollectParameterBindingsFromQueryIntoBindings(String input, List<ParameterBinding> bindings,
+				ValueExpressionParser parser) {
 
 			if (!StringUtils.hasText(input)) {
 				return input;
@@ -194,11 +194,11 @@ class StringBasedQuery {
 
 			Assert.notNull(bindings, "Parameter bindings must not be null");
 
-			return transformQueryAndCollectExpressionParametersIntoBindings(input, bindings);
+			return transformQueryAndCollectExpressionParametersIntoBindings(input, bindings, parser);
 		}
 
 		private static String transformQueryAndCollectExpressionParametersIntoBindings(String input,
-				List<ParameterBinding> bindings) {
+				List<ParameterBinding> bindings, ValueExpressionParser parser) {
 
 			StringBuilder result = new StringBuilder();
 
@@ -217,7 +217,7 @@ class StringBasedQuery {
 				int exprStart = matcher.start();
 				currentPosition = exprStart;
 
-				if (matcher.pattern() == NAME_BASED_EXPRESSION_PATTERN || matcher.pattern() == INDEX_BASED_EXPRESSION_PATTERN) {
+				if (isExpression(matcher.pattern())) {
 					// eat parameter expression
 					int curlyBraceOpenCount = 1;
 					currentPosition += 3;
@@ -241,14 +241,12 @@ class StringBasedQuery {
 
 				result.append(ARGUMENT_PLACEHOLDER);
 
-				if (matcher.pattern() == NAME_BASED_EXPRESSION_PATTERN || matcher.pattern() == INDEX_BASED_EXPRESSION_PATTERN) {
-					bindings.add(
-							BindingContext.ParameterBinding
-							.expression(input.substring(exprStart + 3, currentPosition - 1), true));
+				if (isExpression(matcher.pattern())) {
+					String expressionString = input.substring(exprStart + 1, currentPosition);
+					bindings.add(BindingContext.ParameterBinding.expression(parser.parse(expressionString)));
 				} else {
-					if (matcher.pattern() == INDEX_PARAMETER_BINDING_PATTERN) {
-						bindings
-								.add(BindingContext.ParameterBinding.indexed(Integer.parseInt(matcher.group(1))));
+					if (isIndexed(matcher.pattern())) {
+						bindings.add(BindingContext.ParameterBinding.indexed(Integer.parseInt(matcher.group(1))));
 					} else {
 						bindings.add(BindingContext.ParameterBinding.named(matcher.group(1)));
 					}
@@ -262,6 +260,15 @@ class StringBasedQuery {
 			return result.append(input.subSequence(currentPosition, input.length())).toString();
 		}
 
+		private static boolean isExpression(Pattern pattern) {
+			return pattern == NAME_BASED_EXPRESSION_PATTERN || pattern == INDEX_BASED_EXPRESSION_PATTERN
+					|| pattern == NAME_BASED_PLACEHOLDER_PATTERN || pattern == INDEX_BASED_PLACEHOLDER_PATTERN;
+		}
+
+		private static boolean isIndexed(Pattern pattern) {
+			return pattern == INDEX_PARAMETER_BINDING_PATTERN || pattern == INDEX_BASED_PLACEHOLDER_PATTERN;
+		}
+
 		@Nullable
 		private static Matcher findNextBindingOrExpression(String input, int position) {
 
@@ -271,6 +278,8 @@ class StringBasedQuery {
 			matchers.add(NAMED_PARAMETER_BINDING_PATTERN.matcher(input));
 			matchers.add(INDEX_BASED_EXPRESSION_PATTERN.matcher(input));
 			matchers.add(NAME_BASED_EXPRESSION_PATTERN.matcher(input));
+			matchers.add(INDEX_BASED_PLACEHOLDER_PATTERN.matcher(input));
+			matchers.add(NAME_BASED_PLACEHOLDER_PATTERN.matcher(input));
 
 			TreeMap<Integer, Matcher> matcherMap = new TreeMap<>();
 

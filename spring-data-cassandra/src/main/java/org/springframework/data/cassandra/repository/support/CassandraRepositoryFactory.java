@@ -35,10 +35,8 @@ import org.springframework.data.repository.core.RepositoryMetadata;
 import org.springframework.data.repository.core.support.RepositoryFactorySupport;
 import org.springframework.data.repository.query.QueryLookupStrategy;
 import org.springframework.data.repository.query.QueryLookupStrategy.Key;
-import org.springframework.data.repository.query.QueryMethodEvaluationContextProvider;
 import org.springframework.data.repository.query.RepositoryQuery;
-import org.springframework.expression.ExpressionParser;
-import org.springframework.expression.spel.standard.SpelExpressionParser;
+import org.springframework.data.repository.query.ValueExpressionSupportHolder;
 import org.springframework.lang.Nullable;
 import org.springframework.util.Assert;
 
@@ -52,8 +50,6 @@ import org.springframework.util.Assert;
  * @author John Blum
  */
 public class CassandraRepositoryFactory extends RepositoryFactorySupport {
-
-	private static final SpelExpressionParser EXPRESSION_PARSER = new SpelExpressionParser();
 
 	private final MappingContext<? extends CassandraPersistentEntity<?>, CassandraPersistentProperty> mappingContext;
 
@@ -101,29 +97,16 @@ public class CassandraRepositoryFactory extends RepositoryFactorySupport {
 
 	@Override
 	protected Optional<QueryLookupStrategy> getQueryLookupStrategy(@Nullable Key key,
-			QueryMethodEvaluationContextProvider evaluationContextProvider) {
+			ValueExpressionSupportHolder expressionSupport) {
 
-		return Optional.of(new CassandraQueryLookupStrategy(operations, evaluationContextProvider, mappingContext));
+		return Optional.of(new CassandraQueryLookupStrategy(operations, expressionSupport, mappingContext));
 	}
 
-	private static class CassandraQueryLookupStrategy implements QueryLookupStrategy {
-
-		private final QueryMethodEvaluationContextProvider evaluationContextProvider;
-
-		private final MappingContext<? extends CassandraPersistentEntity<?>, CassandraPersistentProperty> mappingContext;
-
-		private final CassandraOperations operations;
-
-		private final ExpressionParser expressionParser = new CachingExpressionParser(EXPRESSION_PARSER);
-
-		CassandraQueryLookupStrategy(CassandraOperations operations,
-				QueryMethodEvaluationContextProvider evaluationContextProvider,
-				MappingContext<? extends CassandraPersistentEntity<?>, CassandraPersistentProperty> mappingContext) {
-
-			this.operations = operations;
-			this.evaluationContextProvider = evaluationContextProvider;
-			this.mappingContext = mappingContext;
-		}
+	private record CassandraQueryLookupStrategy(CassandraOperations operations,
+			ValueExpressionSupportHolder expressionSupport,
+			MappingContext<? extends CassandraPersistentEntity<?>, CassandraPersistentProperty> mappingContext)
+			implements
+				QueryLookupStrategy {
 
 		@Override
 		public RepositoryQuery resolveQuery(Method method, RepositoryMetadata metadata, ProjectionFactory factory,
@@ -134,14 +117,12 @@ public class CassandraRepositoryFactory extends RepositoryFactorySupport {
 
 			if (namedQueries.hasQuery(namedQueryName)) {
 				String namedQuery = namedQueries.getQuery(namedQueryName);
-				return new StringBasedCassandraQuery(namedQuery, queryMethod, operations, expressionParser,
-						evaluationContextProvider);
+				return new StringBasedCassandraQuery(namedQuery, queryMethod, operations, expressionSupport);
 			} else if (queryMethod.hasAnnotatedQuery()) {
-				return new StringBasedCassandraQuery(queryMethod, operations, expressionParser, evaluationContextProvider);
+				return new StringBasedCassandraQuery(queryMethod, operations, expressionSupport);
 			} else {
 				return new PartTreeCassandraQuery(queryMethod, operations);
 			}
 		}
 	}
 }
-
